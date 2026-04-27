@@ -27,6 +27,20 @@ export default async function DashboardPage() {
     .limit(1)
     .maybeSingle();
 
+  // Pull the chat history so a refresh restores the conversation.
+  const { data: history } = await supabase
+    .from("ai_messages")
+    .select("role, content, created_at")
+    .eq("workspace_id", ws.id)
+    .in("role", ["user", "assistant"])
+    .order("created_at", { ascending: true })
+    .limit(80);
+
+  const initialMessages =
+    (history as { role: "user" | "assistant"; content: string }[] | null)?.map(
+      (h) => ({ role: h.role, content: h.content })
+    ) ?? [];
+
   return (
     <main className="min-h-screen bg-canvas">
       <header className="border-b border-accent-100 bg-white">
@@ -61,6 +75,7 @@ export default async function DashboardPage() {
                 }
               : null
           }
+          initialMessages={initialMessages}
         />
       </section>
     </main>

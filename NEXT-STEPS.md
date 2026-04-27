@@ -112,12 +112,46 @@ Week 2 milestones from the 90-day plan are in:
 ### What still requires you
 The "Steps for you when you're back" list above is unchanged: Anthropic key, `.env.local`, Supabase URL config, smoke test, GitHub push, Vercel env wiring, DNS. Once you do those, the entire onboarding + chat loop will work end-to-end on `localhost:3000` and on your Vercel deploy.
 
-## After that's live, the next build cycle (Week 3+)
+## What I built in build cycle 2 (after the GitHub push)
 
-In priority order:
-1. **Persist chat history** — write user/assistant turns to `ai_messages`, scoped by `workspace_id`, costed in `cost_cents`. Hooks the audit log too.
-2. **Tool use in chat** — start with `check_business_name(name)` (domain heuristic + USPTO/CIPO link surfacing) and `search_jurisdiction(topic)` against an Ontario + Delaware seed knowledge base.
-3. **Document Vault** — first 3 templates (NDA, contractor, ToS) rendered server-side from MDX with the mandatory disclaimer footer; stored in `documents`.
-4. **Workspace switcher** — the dashboard currently shows the first workspace. Once a user has more than one, we need a switcher.
-5. **Rate limit `/api/chat`** — Upstash or Vercel KV with a per-user cap to control cost during private beta.
-6. **Eval harness** — small CI test suite (Vitest) of 20 prompts with expected behaviors so prompt changes can't silently regress.
+While you set up Vercel, I shipped the next layer of product. **You'll need to commit + push these changes to redeploy on Vercel** (one command at the bottom).
+
+### New
+- **Chat persistence** — every turn (user, assistant, tool) is saved to `ai_messages` with model name, token counts, and cost in cents. Audit-log mirror writes for every turn. (`src/lib/ai-messages.ts`)
+- **Cost accounting** — pricing table for Sonnet 4.6 / Opus 4.6 / Haiku 4.5; rounds up to the cent. (`src/lib/cost.ts`)
+- **First two tools** — Cofoundr can now call them mid-conversation:
+  - `check_business_name(name)` — real DNS lookup of `.com` / `.ca` / `.ai` availability, plus USPTO / CIPO / IG / X / TikTok / LinkedIn search URLs and an honest "not authoritative" disclaimer.
+  - `search_jurisdiction(jurisdiction, topic)` — curated, citation-bearing snippets for Ontario incorporation/taxes and Delaware incorporation/taxes. Other jurisdictions return a partial-coverage warning so the model degrades gracefully.
+  - Tools live in `src/lib/tools.ts` with Zod input validation, hard timeouts, and a clean dispatcher.
+- **Agentic chat loop** — `/api/chat` was rewritten to run a Claude tool-use loop (max 4 iterations) instead of pure streaming. Multiple tool calls per turn supported. Persistence happens at every step.
+- **History restored on refresh** — the dashboard now hydrates the chat from `ai_messages` so a page reload doesn't wipe the conversation.
+
+### Changed request shape (chat endpoint)
+The chat client now sends `{ workspace_id, message }` instead of a full messages array. Server pulls history from the DB. This makes the client simpler and the audit trail authoritative.
+
+### Commit & push the cycle 2 work
+
+```bash
+cd ~/cofoundr
+git add .
+git commit -m "feat: chat persistence + tool use (check_business_name, search_jurisdiction)
+
+- Save every user/assistant/tool turn to ai_messages with cost accounting
+- Anthropic tool-use loop in /api/chat (max 4 iterations)
+- check_business_name: live DNS heuristic + trademark and social-handle search URLs
+- search_jurisdiction: curated KB snippets for ON + DE; graceful degradation elsewhere
+- Restore chat history on dashboard refresh
+- Audit-log every chat turn"
+git push
+```
+
+If Vercel is connected to the repo, the push will auto-trigger a redeploy. ~2 minutes later, sign in on the live site and try asking Cofoundr "Is the name 'Mariposa Candle Co.' available?" — it should call the `check_business_name` tool and come back with real DNS results.
+
+## Build cycle 3 (next, in priority order)
+
+1. **Document Vault — first 3 templates** (NDA, contractor agreement, ToS) rendered server-side from MDX with the disclaimer footer baked in; stored in `documents`. Two-button UI: "Generate" and "Download PDF".
+2. **Rate limit `/api/chat`** — Upstash or Vercel KV with a per-user daily cap to keep AI spend predictable in private beta.
+3. **Workspace switcher** — currently we always show the first workspace; need a dropdown once a user has more than one.
+4. **Eval harness** — small Vitest suite of 20 prompts so prompt or model changes can't silently regress.
+5. **Streaming UI for tool-free turns** — keep the agentic loop, but stream when the model returns text-only.
+6. **Domain-availability tool upgrade** — go from DNS heuristic to a real registrar API (Namecheap or Porkbun) so we can quote prices and hand off the buy.
