@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { listMyWorkspaces } from "@/lib/workspace";
 import { OnboardingWizard } from "./wizard";
 
-export const metadata = { title: "Welcome to Cofoundr" };
+// Auth-gated; no metadata export needed.
 
 export default async function OnboardingPage() {
   const supabase = await createClient();

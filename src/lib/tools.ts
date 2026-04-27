@@ -229,11 +229,15 @@ export const TOOL_SCHEMAS = TOOLS.map((t) => t.schema);
 export async function executeTool(
   name: string,
   input: unknown,
-  _ctx: ToolContext
+  ctx: ToolContext
 ): Promise<ToolExecuteResult> {
   const t = TOOLS.find((x) => x.schema.name === name);
   if (!t) return { ok: false, error: `Unknown tool: ${name}` };
   try {
+    // ctx is reserved for tools that need tenant-scoped DB writes;
+    // current tools (DNS lookup, KB lookup) are pure functions of input,
+    // but we keep ctx threaded so the next tool can use it without an API change.
+    void ctx;
     return await t.execute(input);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Tool execution error";

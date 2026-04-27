@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { listMyWorkspaces } from "@/lib/workspace";
 import { CofoundrChat } from "@/components/cofoundr-chat";
 
-export const metadata = { title: "Dashboard" };
+// Auth-gated; no metadata export needed.
+// (Next 15.5 has a known PageProps-typegen quirk with literal-typed metadata.)
 
 export default async function DashboardPage() {
   const supabase = await createClient();
