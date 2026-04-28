@@ -23,7 +23,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
-import { getAnthropic, pickModel, cofoundrSystem } from "@/lib/anthropic";
+import {
+  getAnthropic,
+  pickModel,
+  cofoundrSystem,
+  classifyMessage,
+} from "@/lib/anthropic";
 import { saveAiMessage, recentTurns } from "@/lib/ai-messages";
 import { TOOL_SCHEMAS, executeTool, type ToolContext } from "@/lib/tools";
 import { costCents } from "@/lib/cost";
@@ -82,7 +87,9 @@ export async function POST(req: NextRequest) {
 
   // ----- 5. Run the agent loop ------------------------------------------
   const anthropic = getAnthropic();
-  const model = pickModel(body.tier);
+  // If the client didn't force a tier, let the cheap Haiku classifier pick.
+  const tier = body.tier ?? (await classifyMessage(body.message));
+  const model = pickModel(tier);
   const system = cofoundrSystem({ jurisdiction: workspace.jurisdiction ?? undefined });
 
   const ctx: ToolContext = {
@@ -100,7 +107,17 @@ export async function POST(req: NextRequest) {
     const resp = await anthropic.messages.create({
       model,
       max_tokens: 2048,
-      system,
+      // Anthropic prompt caching: mark the static prefix (system prompt) as
+      // cacheable so repeat turns read it from cache at ~10% of normal input
+      // cost. The system prompt + Cofoundr persona is ~600-800 tokens; the
+      // ephemeral cache lasts ~5 min between turns.
+      system: [
+        {
+          type: "text",
+          text: system,
+          cache_control: { type: "ephemeral" },
+        },
+      ] as unknown as Anthropic.Messages.MessageCreateParams["system"],
       tools: TOOL_SCHEMAS as unknown as Anthropic.Messages.Tool[],
       messages,
     });
@@ -134,6 +151,7 @@ export async function POST(req: NextRequest) {
         stop_reason: resp.stop_reason,
         tool_calls: toolUses.map((t) => ({ name: t.name, id: t.id, input: t.input })),
         iteration: iter,
+        tier,
       },
     });
 
@@ -190,6 +208,7 @@ export async function POST(req: NextRequest) {
       tokens_out: totalTokensOut,
       cost_cents: totalCost,
       model,
+      tier,
     },
   });
 }

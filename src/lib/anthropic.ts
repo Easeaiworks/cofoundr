@@ -38,6 +38,46 @@ export function pickModel(tier: ModelTier = "default"): string {
 }
 
 /**
+ * Cheap pre-classifier — uses Haiku (~$0.0001 / call) to pick the right model
+ * tier for the user's message. Saves ~5–10× on simple lookups by routing them
+ * to Haiku instead of Sonnet, and reserves Opus only for genuinely complex
+ * planning turns.
+ *
+ * Tiers:
+ *   - fast      → Haiku.  Yes/no, lookups, name checks, definitions.
+ *   - default   → Sonnet. Advisory questions, drafting short docs, follow-ups.
+ *   - strategy  → Opus.   SWOT/market sizing, multi-step plans, deep synthesis.
+ */
+export async function classifyMessage(text: string): Promise<ModelTier> {
+  if (!text || text.length < 4) return "default";
+  try {
+    const anthropic = getAnthropic();
+    const env = getServerEnv();
+    const resp = await anthropic.messages.create({
+      model: env.ANTHROPIC_MODEL_FAST,
+      max_tokens: 6,
+      system:
+        "Classify the user message into exactly one of: fast, default, strategy. " +
+        "fast = simple lookup, definition, yes/no, or name/domain check. " +
+        "default = advisory question, drafting a short doc, follow-up. " +
+        "strategy = complex multi-step planning, market sizing, full SWOT, comparison of options requiring synthesis. " +
+        "Reply with only the single word.",
+      messages: [{ role: "user", content: text.slice(0, 1000) }],
+    });
+    const out =
+      resp.content[0]?.type === "text"
+        ? resp.content[0].text.trim().toLowerCase()
+        : "default";
+    if (out.startsWith("fast")) return "fast";
+    if (out.startsWith("strategy")) return "strategy";
+    return "default";
+  } catch {
+    // Classifier failure should never block the actual chat. Fall back to default.
+    return "default";
+  }
+}
+
+/**
  * The Cofoundr system prompt.
  *
  * Treat this as a versioned artifact. Every change should:

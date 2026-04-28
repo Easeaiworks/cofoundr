@@ -19,6 +19,8 @@ const ServerEnvSchema = PublicEnvSchema.extend({
   ANTHROPIC_MODEL_DEFAULT: z.string().default("claude-sonnet-4-6"),
   ANTHROPIC_MODEL_STRATEGY: z.string().default("claude-opus-4-6"),
   ANTHROPIC_MODEL_FAST: z.string().default("claude-haiku-4-5-20251001"),
+  VOYAGE_API_KEY: z.string().optional(),
+  VOYAGE_MODEL: z.string().default("voyage-3-large"),
   STRIPE_SECRET_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
