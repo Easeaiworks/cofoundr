@@ -28,10 +28,12 @@ import {
   pickModel,
   cofoundrSystem,
   classifyMessage,
+  type ClassifyResult,
 } from "@/lib/anthropic";
 import { saveAiMessage, recentTurns } from "@/lib/ai-messages";
 import { TOOL_SCHEMAS, executeTool, type ToolContext } from "@/lib/tools";
 import { costCents } from "@/lib/cost";
+import { lookupCache, saveCache } from "@/lib/cache";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -85,10 +87,66 @@ export async function POST(req: NextRequest) {
     content: h.content,
   }));
 
-  // ----- 5. Run the agent loop ------------------------------------------
+  // ----- 5. Classify the turn (tier + cacheability + topic) -------------
+  // The classifier is one cheap Haiku call; it tells us:
+  //   - Which model tier to use (fast/default/strategy)
+  //   - Whether this question is cacheable (general info, not user-specific)
+  //   - The topic (drives cache TTL)
+  let classification: ClassifyResult;
+  if (body.tier) {
+    classification = { tier: body.tier, cacheable: false, topic: "general" };
+  } else {
+    classification = await classifyMessage(body.message);
+  }
+  const { tier, cacheable, topic } = classification;
+
+  // ----- 5a. Cache lookup (only on short conversations + cacheable) ------
+  // We skip the cache once a conversation has built up real context, because
+  // a cached "general info" answer would lose the user's prior turns.
+  const isStartOfConvo = history.length <= 2; // includes the user msg we just saved
+  if (cacheable && isStartOfConvo) {
+    const hit = await lookupCache({
+      question: body.message,
+      jurisdiction: workspace.jurisdiction,
+    });
+    if (hit) {
+      // Persist the cache-served assistant turn so history + audit are accurate.
+      await saveAiMessage({
+        workspace_id: workspace.id,
+        user_id: user.id,
+        role: "assistant",
+        content: hit.answer,
+        model: "kb_cache",
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_cents: 0,
+        metadata: {
+          cache_hit: true,
+          cache_id: hit.id,
+          cache_similarity: hit.similarity,
+          cache_hit_count: hit.hit_count,
+          tier,
+          topic,
+        },
+      });
+
+      return NextResponse.json({
+        text: hit.answer,
+        usage: {
+          tokens_in: 0,
+          tokens_out: 0,
+          cost_cents: 0,
+          model: "kb_cache",
+          tier,
+          cached: true,
+          similarity: hit.similarity,
+        },
+      });
+    }
+  }
+
+  // ----- 5b. Run the agent loop -----------------------------------------
   const anthropic = getAnthropic();
-  // If the client didn't force a tier, let the cheap Haiku classifier pick.
-  const tier = body.tier ?? (await classifyMessage(body.message));
   const model = pickModel(tier);
   const system = cofoundrSystem({ jurisdiction: workspace.jurisdiction ?? undefined });
 
@@ -201,6 +259,22 @@ export async function POST(req: NextRequest) {
       "I had to use several tools and ran out of room to compose a final answer. Try asking me again — I'll do better now that I've gathered the data.";
   }
 
+  // ----- 6. Save to cache if cacheable + on a fresh conversation ---------
+  // We only cache the first turn's answer to avoid caching context-dependent
+  // follow-ups. Fire-and-forget: failures don't block the response.
+  if (cacheable && isStartOfConvo && finalText && finalText.length >= 40) {
+    void saveCache({
+      question: body.message,
+      jurisdiction: workspace.jurisdiction,
+      topic,
+      answer: finalText,
+      model_used: model,
+      tokens_in: totalTokensIn,
+      tokens_out: totalTokensOut,
+      cost_cents: totalCost,
+    });
+  }
+
   return NextResponse.json({
     text: finalText,
     usage: {
@@ -209,6 +283,7 @@ export async function POST(req: NextRequest) {
       cost_cents: totalCost,
       model,
       tier,
+      cached: false,
     },
   });
 }

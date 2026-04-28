@@ -37,43 +37,102 @@ export function pickModel(tier: ModelTier = "default"): string {
   }
 }
 
+export type CacheTopic =
+  | "tax"
+  | "incorporation"
+  | "funding"
+  | "naming"
+  | "compliance"
+  | "general";
+
+export type ClassifyResult = {
+  tier: ModelTier;
+  /** True if the question is general-knowledge enough to recycle across users. */
+  cacheable: boolean;
+  /** Coarse topic — drives TTL and lets us slice cache hits later. */
+  topic: CacheTopic;
+};
+
 /**
- * Cheap pre-classifier — uses Haiku (~$0.0001 / call) to pick the right model
- * tier for the user's message. Saves ~5–10× on simple lookups by routing them
- * to Haiku instead of Sonnet, and reserves Opus only for genuinely complex
- * planning turns.
+ * Cheap pre-classifier — uses Haiku (~$0.0001 / call) to decide three things:
+ *   1. Which model tier should answer this turn?
+ *   2. Is this question cacheable (general info, not user-specific)?
+ *   3. What's the topic? (Drives cache TTL.)
+ *
+ * Output format: `tier|cacheable|topic` separated by pipes. We tried JSON but
+ * Haiku occasionally adds prose around it; the pipe format is bulletproof.
  *
  * Tiers:
  *   - fast      → Haiku.  Yes/no, lookups, name checks, definitions.
  *   - default   → Sonnet. Advisory questions, drafting short docs, follow-ups.
  *   - strategy  → Opus.   SWOT/market sizing, multi-step plans, deep synthesis.
  */
-export async function classifyMessage(text: string): Promise<ModelTier> {
-  if (!text || text.length < 4) return "default";
+export async function classifyMessage(text: string): Promise<ClassifyResult> {
+  const fallback: ClassifyResult = {
+    tier: "default",
+    cacheable: false,
+    topic: "general",
+  };
+  if (!text || text.length < 4) return fallback;
+
   try {
     const anthropic = getAnthropic();
     const env = getServerEnv();
     const resp = await anthropic.messages.create({
       model: env.ANTHROPIC_MODEL_FAST,
-      max_tokens: 6,
-      system:
-        "Classify the user message into exactly one of: fast, default, strategy. " +
-        "fast = simple lookup, definition, yes/no, or name/domain check. " +
-        "default = advisory question, drafting a short doc, follow-up. " +
-        "strategy = complex multi-step planning, market sizing, full SWOT, comparison of options requiring synthesis. " +
-        "Reply with only the single word.",
+      max_tokens: 24,
+      system: [
+        "You classify user messages for an AI co-founder app. Reply with a single line:",
+        "  TIER|CACHEABLE|TOPIC",
+        "",
+        "TIER (one of):",
+        "  fast      — simple lookup, definition, yes/no, name/domain check",
+        "  default   — advisory question, drafting a short doc, follow-up",
+        "  strategy  — complex multi-step planning, market sizing, deep SWOT, comparison requiring synthesis",
+        "",
+        "CACHEABLE (one of):",
+        "  yes — answer is general info that would be the same for any user (e.g. 'what is HST in Ontario', 'Delaware franchise tax')",
+        "  no  — answer depends on this user's specifics, opinion, or in-conversation context",
+        "",
+        "TOPIC (one of):",
+        "  tax | incorporation | funding | naming | compliance | general",
+        "",
+        "Output ONLY the single line. No prose. No quotes. Example: fast|yes|tax",
+      ].join("\n"),
       messages: [{ role: "user", content: text.slice(0, 1000) }],
     });
+
     const out =
-      resp.content[0]?.type === "text"
-        ? resp.content[0].text.trim().toLowerCase()
+      resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
+    const [tierRaw, cacheRaw, topicRaw] = out
+      .toLowerCase()
+      .split(/\s*\|\s*/);
+
+    const tier: ModelTier =
+      tierRaw === "fast"
+        ? "fast"
+        : tierRaw === "strategy"
+        ? "strategy"
         : "default";
-    if (out.startsWith("fast")) return "fast";
-    if (out.startsWith("strategy")) return "strategy";
-    return "default";
+
+    const cacheable = (cacheRaw ?? "").startsWith("y");
+
+    const validTopics: CacheTopic[] = [
+      "tax",
+      "incorporation",
+      "funding",
+      "naming",
+      "compliance",
+      "general",
+    ];
+    const topic: CacheTopic = validTopics.includes(topicRaw as CacheTopic)
+      ? (topicRaw as CacheTopic)
+      : "general";
+
+    return { tier, cacheable, topic };
   } catch {
-    // Classifier failure should never block the actual chat. Fall back to default.
-    return "default";
+    // Classifier failure should never block the actual chat. Fall back safe.
+    return fallback;
   }
 }
 

@@ -147,7 +147,56 @@ git push
 
 If Vercel is connected to the repo, the push will auto-trigger a redeploy. ~2 minutes later, sign in on the live site and try asking Cofoundr "Is the name 'Mariposa Candle Co.' available?" — it should call the `check_business_name` tool and come back with real DNS results.
 
-## Build cycle 3 (next, in priority order)
+## Build cycle 3 — cost optimization (just shipped)
+
+Two big-impact changes already in your local repo, ready to push:
+
+### Phase A — Auto-tier model routing + Anthropic prompt caching
+
+- A 50-token Haiku pre-classifier picks the right model tier per message (fast / default / strategy). Most conversational turns get Haiku ($0.80/MTok input) instead of Sonnet ($3/MTok), a 5–10× per-turn saving.
+- The system prompt now ships with `cache_control: ephemeral`. Anthropic caches it for 5 min between turns; subsequent turns within that window read input tokens at ~10% of normal cost.
+- Tier + topic + cacheability are now logged in `ai_messages.metadata` and surfaced in the API response so the user-facing chat can show "[cached]" in a future iteration.
+
+### Phase B — Semantic response cache (`kb_cache`)
+
+A new Postgres table (`kb_cache`) with a pgvector HNSW index stores prior factual answers keyed by jurisdiction and question embedding. The flow:
+
+1. New user message → cheap Haiku classifier returns `{ tier, cacheable, topic }`.
+2. If `cacheable === true` AND the conversation is fresh (≤2 prior turns), embed the question via Voyage AI (`voyage-3-large`, 1024-dim, ~$0.00002/call) and run an HNSW similarity search against `kb_cache`.
+3. If a row exists with cosine similarity > 0.92 in the same jurisdiction → return the cached answer with **zero LLM cost**. Increment `hit_count`, log `cache_hit: true` in audit.
+4. Otherwise run the agent loop normally; if the answer turns out cacheable, save it with a TTL based on topic (tax: 90d, funding: 14d, etc.).
+
+What's NOT cached: user-specific advice, opinion, in-conversation follow-ups. The classifier flags these as `cacheable: false` and they always go through the live LLM.
+
+Cross-tenant intentionally — Toronto and Vancouver founders asking the same Ontario tax question get the same answer once it's in cache. RLS is locked down to service-role only.
+
+### Required new env var (you'll need to add this)
+
+`VOYAGE_API_KEY` — sign up at https://dash.voyageai.com → **API Keys** → create one. Free tier covers 200M tokens, more than enough for the entire beta. Add it to:
+1. Local `.env.local`
+2. Vercel **Settings → Environment Variables** (mark Sensitive)
+
+Without it, cache lookups silently degrade to "always miss" (no errors, just no savings).
+
+### Push the cycle 3 work
+
+```bash
+cd ~/cofoundr
+git add .
+git commit -m "perf: kb_cache semantic response cache + classifier upgrade
+
+- New kb_cache table (pgvector HNSW, 1024-dim voyage-3-large embeddings)
+- match_kb_cache RPC with cosine similarity + jurisdiction filter
+- src/lib/voyage.ts thin REST client for Voyage embeddings
+- src/lib/cache.ts: lookupCache + saveCache with topic-based TTL
+- Classifier now returns { tier, cacheable, topic }
+- /api/chat: lookup before agent loop, save after; metadata logged"
+git push
+```
+
+Then add `VOYAGE_API_KEY` in Vercel and redeploy. Done.
+
+## Build cycle 4 (queued, in priority order)
 
 1. **Document Vault — first 3 templates** (NDA, contractor agreement, ToS) rendered server-side from MDX with the disclaimer footer baked in; stored in `documents`. Two-button UI: "Generate" and "Download PDF".
 2. **Rate limit `/api/chat`** — Upstash or Vercel KV with a per-user daily cap to keep AI spend predictable in private beta.
@@ -155,3 +204,4 @@ If Vercel is connected to the repo, the push will auto-trigger a redeploy. ~2 mi
 4. **Eval harness** — small Vitest suite of 20 prompts so prompt or model changes can't silently regress.
 5. **Streaming UI for tool-free turns** — keep the agentic loop, but stream when the model returns text-only.
 6. **Domain-availability tool upgrade** — go from DNS heuristic to a real registrar API (Namecheap or Porkbun) so we can quote prices and hand off the buy.
+7. **Cache admin** — small admin page to browse `kb_cache` rows, see hit counts, manually expire stale entries, promote popular ones to "verified" (curated KB).
