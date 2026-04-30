@@ -2,10 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { listMyWorkspaces, MAX_WORKSPACES_PER_USER } from "@/lib/workspace";
 import { loadJourney, stageLabel } from "@/lib/journey";
-import {
-  readActiveWorkspaceCookie,
-  writeActiveWorkspaceCookie,
-} from "@/lib/active-workspace";
+import { readActiveWorkspaceCookie } from "@/lib/active-workspace";
 import { CofoundrChat } from "@/components/cofoundr-chat";
 import { DashboardTopbar } from "@/components/dashboard-topbar";
 import { JourneySidebar } from "@/components/journey-sidebar";
@@ -47,11 +44,10 @@ export default async function DashboardPage({
 
   const ws = workspaces.find((w) => w.slug === wantSlug) ?? workspaces[0]!;
 
-  // Persist the active workspace if it changed (e.g. via ?w= param).
-  const cookieSlug = await readActiveWorkspaceCookie();
-  if (cookieSlug !== ws.slug) {
-    await writeActiveWorkspaceCookie(ws.slug);
-  }
+  // NOTE: We deliberately do NOT write the cookie here — Next.js 15 forbids
+  // writing cookies during a Server Component render. The cookie is set in
+  // server actions (workspace switcher, onboarding completion) instead.
+  // ?w=slug overrides per-request without persisting; that's intentional.
 
   // Pull the most recent business idea (if any) so we can seed Cofoundr's context.
   const { data: ideaRow } = await supabase
