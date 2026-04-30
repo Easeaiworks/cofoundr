@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Home, ChevronDown, Plus, Check, LogOut } from "lucide-react";
+import { Home, ChevronDown, Plus, Check, LogOut, FileText, Sparkles, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type WorkspaceLite = { id: string; name: string; slug: string };
@@ -166,9 +166,34 @@ export function DashboardTopbar({
           </div>
         </div>
 
-        {/* Right: user + sign out */}
+        {/* Right: workspace tools + user + sign out */}
         <div className="flex items-center gap-2 shrink-0">
-          <span className="hidden lg:inline text-xs text-ink-muted">{userEmail}</span>
+          {/* Tool nav — shown on lg+ as icons; stacks below in a future mobile menu */}
+          <nav className="hidden lg:flex items-center gap-1">
+            <Link
+              href="/documents"
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-ink hover:bg-accent-50"
+              title="Document Vault"
+            >
+              <FileText className="h-3.5 w-3.5" /> Docs
+            </Link>
+            <Link
+              href="/branding"
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-ink hover:bg-accent-50"
+              title="Branding kit"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Branding
+            </Link>
+            <Link
+              href="/sites"
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs text-ink hover:bg-accent-50"
+              title="Website"
+            >
+              <Globe className="h-3.5 w-3.5" /> Site
+            </Link>
+          </nav>
+
+          <span className="hidden xl:inline text-xs text-ink-muted ml-1">{userEmail}</span>
           <form action="/auth/signout" method="post">
             <button
               type="submit"

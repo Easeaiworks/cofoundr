@@ -21,6 +21,8 @@ const ServerEnvSchema = PublicEnvSchema.extend({
   ANTHROPIC_MODEL_FAST: z.string().default("claude-haiku-4-5-20251001"),
   VOYAGE_API_KEY: z.string().optional(),
   VOYAGE_MODEL: z.string().default("voyage-3-large"),
+  REPLICATE_API_TOKEN: z.string().optional(),
+  REPLICATE_LOGO_MODEL: z.string().default("black-forest-labs/flux-schnell"),
   STRIPE_SECRET_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
