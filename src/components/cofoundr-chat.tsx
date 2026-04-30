@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { ChatMarkdown } from "@/components/markdown";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -128,8 +129,10 @@ function Bubble({
   }
   return (
     <div className="flex justify-start">
-      <div className="max-w-[85%] rounded-2xl bg-accent-50 border border-accent-100 px-4 py-3 text-sm text-ink whitespace-pre-wrap">
-        {content || (
+      <div className="max-w-[85%] rounded-2xl bg-accent-50 border border-accent-100 px-4 py-3 text-sm text-ink">
+        {content ? (
+          <ChatMarkdown>{content}</ChatMarkdown>
+        ) : (
           <span className="text-ink-muted italic">{pending ? "thinking…" : ""}</span>
         )}
       </div>

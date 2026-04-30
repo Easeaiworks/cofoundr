@@ -1,12 +1,36 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { listMyWorkspaces } from "@/lib/workspace";
+import { listMyWorkspaces, MAX_WORKSPACES_PER_USER } from "@/lib/workspace";
+import { loadJourney, stageLabel } from "@/lib/journey";
+import {
+  readActiveWorkspaceCookie,
+  writeActiveWorkspaceCookie,
+} from "@/lib/active-workspace";
 import { CofoundrChat } from "@/components/cofoundr-chat";
+import { DashboardTopbar } from "@/components/dashboard-topbar";
+import { JourneySidebar } from "@/components/journey-sidebar";
 
 // Auth-gated; no metadata export needed.
-// (Next 15.5 has a known PageProps-typegen quirk with literal-typed metadata.)
 
-export default async function DashboardPage() {
+const JURISDICTION_LABELS: Record<string, string> = {
+  "CA-ON": "Ontario, Canada",
+  "CA-BC": "British Columbia, Canada",
+  "CA-AB": "Alberta, Canada",
+  "CA-QC": "Quebec, Canada",
+  "CA-OTHER": "Canada",
+  "US-DE": "Delaware, USA",
+  "US-CA": "California, USA",
+  "US-TX": "Texas, USA",
+  "US-FL": "Florida, USA",
+  "US-NY": "New York, USA",
+  "US-OTHER": "USA",
+};
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ w?: string }>;
+}) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   const user = data.user;
@@ -16,8 +40,18 @@ export default async function DashboardPage() {
   const workspaces = await listMyWorkspaces();
   if (workspaces.length === 0) redirect("/onboarding");
 
-  // For now we use the first workspace. Workspace switcher lands later.
-  const ws = workspaces[0]!;
+  // Resolve which workspace to show: ?w=slug → cookie → first workspace.
+  const params = await searchParams;
+  const wantSlug =
+    params.w ?? (await readActiveWorkspaceCookie()) ?? workspaces[0]!.slug;
+
+  const ws = workspaces.find((w) => w.slug === wantSlug) ?? workspaces[0]!;
+
+  // Persist the active workspace if it changed (e.g. via ?w= param).
+  const cookieSlug = await readActiveWorkspaceCookie();
+  if (cookieSlug !== ws.slug) {
+    await writeActiveWorkspaceCookie(ws.slug);
+  }
 
   // Pull the most recent business idea (if any) so we can seed Cofoundr's context.
   const { data: ideaRow } = await supabase
@@ -42,42 +76,60 @@ export default async function DashboardPage() {
       (h) => ({ role: h.role, content: h.content })
     ) ?? [];
 
+  // Compute Launch Journey progress.
+  const journey = await loadJourney(ws.id);
+
+  const jurisdictionLabel =
+    (ws.jurisdiction && JURISDICTION_LABELS[ws.jurisdiction]) ||
+    ws.jurisdiction ||
+    null;
+
   return (
     <main className="min-h-screen bg-canvas">
-      <header className="border-b border-accent-100 bg-white">
-        <div className="container max-w-5xl py-5 flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-wider text-accent">Cofoundr</p>
-            <h1 className="text-xl font-semibold text-ink">{ws.name}</h1>
-            <p className="text-xs text-ink-muted">
-              {ws.jurisdiction ?? "Jurisdiction not set"} · stage: {ws.business_stage ?? "idea"}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-ink-muted">{user.email}</p>
-            <form action="/auth/signout" method="post">
-              <button type="submit" className="mt-1 text-xs text-accent hover:underline">
-                Sign out
-              </button>
-            </form>
-          </div>
-        </div>
-      </header>
+      <DashboardTopbar
+        workspaceName={ws.name}
+        workspaceSlug={ws.slug}
+        jurisdictionLabel={jurisdictionLabel}
+        stageLabel={stageLabel(ws.business_stage)}
+        currentStepTitle={journey.currentStepTitle}
+        doneCount={journey.doneCount}
+        totalCount={journey.totalCount}
+        userEmail={user.email ?? ""}
+        allWorkspaces={workspaces.map((w) => ({
+          id: w.id,
+          name: w.name,
+          slug: w.slug,
+        }))}
+        canAddMore={workspaces.length < MAX_WORKSPACES_PER_USER}
+      />
 
-      <section className="container max-w-5xl py-8">
-        <CofoundrChat
-          workspaceId={ws.id}
-          jurisdiction={ws.jurisdiction ?? null}
-          ideaContext={
-            ideaRow
-              ? {
-                  title: (ideaRow as { title: string }).title,
-                  metadata: (ideaRow as { metadata: Record<string, unknown> }).metadata,
-                }
-              : null
-          }
-          initialMessages={initialMessages}
-        />
+      <section className="container max-w-6xl py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+          {/* Chat (main) */}
+          <div className="min-w-0">
+            <CofoundrChat
+              workspaceId={ws.id}
+              jurisdiction={ws.jurisdiction ?? null}
+              ideaContext={
+                ideaRow
+                  ? {
+                      title: (ideaRow as { title: string }).title,
+                      metadata: (ideaRow as { metadata: Record<string, unknown> })
+                        .metadata,
+                    }
+                  : null
+              }
+              initialMessages={initialMessages}
+            />
+          </div>
+
+          {/* Journey rail */}
+          <JourneySidebar
+            steps={journey.steps}
+            doneCount={journey.doneCount}
+            totalCount={journey.totalCount}
+          />
+        </div>
       </section>
     </main>
   );

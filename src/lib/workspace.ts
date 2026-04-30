@@ -82,6 +82,9 @@ export type CreateWorkspaceResult =
   | { ok: true; workspace_id: string; slug: string }
   | { ok: false; error: string };
 
+/** Hard cap on simultaneous business ideas per user account. */
+export const MAX_WORKSPACES_PER_USER = 3;
+
 /**
  * Create a workspace + add caller as owner. Atomic-ish: we create the
  * workspace, then immediately add the membership row. If the second insert
@@ -93,6 +96,15 @@ export async function createWorkspace(
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in" };
+
+  // Enforce 3-workspace limit per user.
+  const existing = await listMyWorkspaces();
+  if (existing.length >= MAX_WORKSPACES_PER_USER) {
+    return {
+      ok: false,
+      error: `You can have up to ${MAX_WORKSPACES_PER_USER} ideas at once. Archive one to start another.`,
+    };
+  }
 
   const name = input.name.trim();
   if (!name) return { ok: false, error: "Workspace name is required" };

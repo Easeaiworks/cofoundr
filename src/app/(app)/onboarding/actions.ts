@@ -68,5 +68,13 @@ export async function saveIdeaAction(formData: FormData): Promise<ActionResult> 
   );
 
   if (!result.ok) return result;
+
+  // Make the just-created workspace the active one so /dashboard shows it.
+  const { listMyWorkspaces } = await import("@/lib/workspace");
+  const { writeActiveWorkspaceCookie } = await import("@/lib/active-workspace");
+  const all = await listMyWorkspaces();
+  const just = all.find((w) => w.id === workspace_id);
+  if (just) await writeActiveWorkspaceCookie(just.slug);
+
   redirect("/dashboard");
 }
