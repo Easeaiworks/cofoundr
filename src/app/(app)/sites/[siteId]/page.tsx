@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { publicEnv } from "@/lib/env";
 import { togglePublishAction } from "../actions";
 import { SitePageEditor } from "./editor";
+import type { Block } from "@/lib/site-blocks";
 
 export default async function SiteEditorPage({
   params,
@@ -22,7 +23,9 @@ export default async function SiteEditorPage({
 
   const { data: site } = await supabase
     .from("sites")
-    .select("id, slug, name, tagline, published")
+    .select(
+      "id, slug, name, tagline, published, workspace_id, theme_key, primary_color, secondary_color"
+    )
     .eq("id", siteId)
     .maybeSingle();
   if (!site) notFound();
@@ -32,20 +35,28 @@ export default async function SiteEditorPage({
     name: string;
     tagline: string | null;
     published: boolean;
+    workspace_id: string;
+    theme_key: string;
+    primary_color: string | null;
+    secondary_color: string | null;
   };
   const s = site as Site;
 
   const { data: pages } = await supabase
     .from("site_pages")
-    .select("id, slug, title, meta_description, content_md, position, is_home")
+    .select(
+      "id, slug, title, meta_description, content_md, content_blocks, position, is_home"
+    )
     .eq("site_id", siteId)
     .order("position", { ascending: true });
+
   type Page = {
     id: string;
     slug: string;
     title: string;
     meta_description: string | null;
-    content_md: string;
+    content_md: string | null;
+    content_blocks: Block[] | null;
     position: number;
     is_home: boolean;
   };
@@ -56,6 +67,21 @@ export default async function SiteEditorPage({
     allPages.find((p) => p.slug === pageSlugParam) ??
     allPages.find((p) => p.is_home) ??
     allPages[0]!;
+
+  // If the page hasn't been migrated to blocks yet, synthesize a single
+  // rich_text block from content_md so the editor still loads.
+  const blocks: Block[] =
+    activePage.content_blocks && activePage.content_blocks.length > 0
+      ? activePage.content_blocks
+      : activePage.content_md
+      ? [
+          {
+            id: crypto.randomUUID(),
+            type: "rich_text",
+            props: { markdown: activePage.content_md },
+          } as Block,
+        ]
+      : [];
 
   const publicUrl = `${publicEnv.NEXT_PUBLIC_SITE_URL}/site/${s.slug}`;
 
@@ -111,7 +137,6 @@ export default async function SiteEditorPage({
 
       <section className="container max-w-6xl py-6">
         <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-6">
-          {/* Page list */}
           <aside className="rounded-2xl border border-accent-100 bg-white p-2 self-start">
             <p className="px-2 pt-1 pb-2 text-[10px] uppercase tracking-wider text-ink-muted">
               Pages
@@ -138,8 +163,25 @@ export default async function SiteEditorPage({
             </ul>
           </aside>
 
-          {/* Editor */}
-          <SitePageEditor page={activePage} siteSlug={s.slug} />
+          <SitePageEditor
+            site={{
+              id: s.id,
+              slug: s.slug,
+              name: s.name,
+              workspace_id: s.workspace_id,
+              theme_key: s.theme_key,
+              primary_color: s.primary_color,
+              secondary_color: s.secondary_color,
+            }}
+            page={{
+              id: activePage.id,
+              slug: activePage.slug,
+              title: activePage.title,
+              content_blocks: blocks,
+              is_home: activePage.is_home,
+            }}
+            workspaceTitle={s.name}
+          />
         </div>
       </section>
     </main>

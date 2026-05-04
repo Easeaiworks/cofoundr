@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { normalizeSlug } from "@/lib/workspace";
+import { defaultHomePageBlocks, PageBlocksSchema } from "@/lib/site-blocks";
 
 const CreateSiteSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -64,20 +65,27 @@ export async function createSiteAction(formData: FormData) {
 
   const siteId = (site as { id: string }).id;
 
-  // Default home page with starter content
-  const defaultHome = `# ${w.name}
-
-**Coming soon.** We're getting set up.
-
-## What we do
-
-A short description of your business goes here. Edit this page to introduce
-yourself.
-
-## Contact
-
-Email us at hello@${slug}.com.
-`;
+  // Default pages — block-based now.
+  const homeBlocks = defaultHomePageBlocks(w.name);
+  const aboutBlocks = [
+    {
+      id: crypto.randomUUID(),
+      type: "rich_text" as const,
+      props: { markdown: `# About ${w.name}\n\nTell your story here.` },
+    },
+  ];
+  const contactBlocks = [
+    {
+      id: crypto.randomUUID(),
+      type: "cta" as const,
+      props: {
+        headline: "Get in touch",
+        body: "We'd love to hear from you.",
+        ctaText: "Email us",
+        ctaHref: `mailto:hello@${slug}.com`,
+      },
+    },
+  ];
 
   await admin.from("site_pages").insert([
     {
@@ -85,7 +93,7 @@ Email us at hello@${slug}.com.
       slug: "home",
       title: "Home",
       meta_description: `Welcome to ${w.name}.`,
-      content_md: defaultHome,
+      content_blocks: homeBlocks,
       position: 0,
       is_home: true,
     },
@@ -94,7 +102,7 @@ Email us at hello@${slug}.com.
       slug: "about",
       title: "About",
       meta_description: `About ${w.name}.`,
-      content_md: `# About\n\nTell your story here.`,
+      content_blocks: aboutBlocks,
       position: 1,
       is_home: false,
     },
@@ -103,7 +111,7 @@ Email us at hello@${slug}.com.
       slug: "contact",
       title: "Contact",
       meta_description: `Contact ${w.name}.`,
-      content_md: `# Contact\n\nGet in touch.`,
+      content_blocks: contactBlocks,
       position: 2,
       is_home: false,
     },
@@ -143,6 +151,79 @@ export async function updateSitePageAction(formData: FormData) {
     })
     .eq("id", parsed.data.page_id);
 
+  revalidatePath("/sites");
+}
+
+// New block-based update for pages. Replaces updateSitePageAction for the
+// upgraded editor. Old action kept around for back-compat in case anything
+// still references it.
+const UpdateBlocksSchema = z.object({
+  page_id: z.string().uuid(),
+  blocks: z.string(), // stringified JSON array of blocks
+});
+
+export async function updateSitePageBlocksAction(formData: FormData) {
+  const parsed = UpdateBlocksSchema.safeParse({
+    page_id: formData.get("page_id"),
+    blocks: formData.get("blocks"),
+  });
+  if (!parsed.success) return;
+
+  let blocks: unknown;
+  try {
+    blocks = JSON.parse(parsed.data.blocks);
+  } catch {
+    return;
+  }
+  const valid = PageBlocksSchema.safeParse(blocks);
+  if (!valid.success) return;
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await supabase
+    .from("site_pages")
+    .update({ content_blocks: valid.data })
+    .eq("id", parsed.data.page_id);
+
+  revalidatePath("/sites");
+}
+
+const UpdateSettingsSchema = z.object({
+  site_id: z.string().uuid(),
+  theme_key: z.string().max(40).optional(),
+  primary_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+  secondary_color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+});
+
+export async function updateSiteSettingsAction(formData: FormData) {
+  const parsed = UpdateSettingsSchema.safeParse({
+    site_id: formData.get("site_id"),
+    theme_key: formData.get("theme_key") ?? undefined,
+    primary_color: formData.get("primary_color") ?? undefined,
+    secondary_color: formData.get("secondary_color") ?? undefined,
+  });
+  if (!parsed.success) return;
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const update: Record<string, string> = {};
+  if (parsed.data.theme_key) update.theme_key = parsed.data.theme_key;
+  if (parsed.data.primary_color) update.primary_color = parsed.data.primary_color;
+  if (parsed.data.secondary_color) update.secondary_color = parsed.data.secondary_color;
+
+  if (Object.keys(update).length === 0) return;
+
+  await supabase.from("sites").update(update).eq("id", parsed.data.site_id);
   revalidatePath("/sites");
 }
 
