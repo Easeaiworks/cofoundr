@@ -104,14 +104,23 @@ export default async function SiteEditorPage({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <a
-              href={publicUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-md border border-accent-100 px-3 py-1.5 text-xs text-ink hover:bg-accent-50"
-            >
-              <ExternalLink className="h-3.5 w-3.5" /> View
-            </a>
+            {s.published ? (
+              <a
+                href={publicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-md border border-accent-100 px-3 py-1.5 text-xs text-ink hover:bg-accent-50"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> View live
+              </a>
+            ) : (
+              <span
+                className="hidden md:inline-flex items-center gap-1 rounded-md border border-dashed border-accent-100 px-3 py-1.5 text-xs text-ink-muted"
+                title="Publish your site to make it visible at this URL"
+              >
+                Publish to view
+              </span>
+            )}
 
             <form action={togglePublishAction}>
               <input type="hidden" name="site_id" value={s.id} />

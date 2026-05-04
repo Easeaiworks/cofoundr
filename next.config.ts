@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
   experimental: {
     // Server actions get a generous body size for document uploads later.
-    serverActions: { bodySizeLimit: "5mb" },
+    serverActions: { bodySizeLimit: "10mb" },
   },
   // Defense-in-depth headers. Cloudflare WAF in front sets stricter ones in prod.
   async headers() {

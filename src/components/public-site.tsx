@@ -3,8 +3,8 @@
  * marketing page that visitors see at /site/[slug] and /site/[slug]/[page].
  *
  * Pure server component. Theme tokens come from src/lib/site-themes.ts and
- * are applied as inline styles + a small set of class hooks. We don't rely
- * on Tailwind's color utilities since themes are dynamic per site.
+ * are applied as inline styles. Per-block visual variants (hero layouts, CTA
+ * styles, features layouts, bg colors/images) live alongside the props.
  */
 import Link from "next/link";
 import { ChatMarkdown } from "@/components/markdown";
@@ -42,7 +42,6 @@ export function PublicSite({
 
   return (
     <>
-      {/* Google Fonts for theme typography */}
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link rel="stylesheet" href={googleFontsHref()} />
@@ -57,15 +56,17 @@ export function PublicSite({
       >
         <Header site={site} pages={pages} active={active} theme={theme} accent={accent} />
 
-        <article style={{ maxWidth: 980, margin: "0 auto", padding: "48px 16px" }}>
+        <div>
           {blocks.length === 0 ? (
-            <p style={{ color: theme.muted }}>This page is empty.</p>
+            <p style={{ maxWidth: 980, margin: "48px auto", padding: "0 16px", color: theme.muted }}>
+              This page is empty.
+            </p>
           ) : (
             blocks.map((b) => (
               <BlockRenderer key={b.id} block={b} theme={theme} accent={accent} />
             ))
           )}
-        </article>
+        </div>
 
         <Footer site={site} theme={theme} accent={accent} />
       </main>
@@ -89,7 +90,7 @@ function Header({
   accent: string;
 }) {
   return (
-    <header style={{ borderBottom: `1px solid ${theme.border}` }}>
+    <header style={{ borderBottom: `1px solid ${theme.border}`, backgroundColor: theme.bg }}>
       <div
         style={{
           maxWidth: 980,
@@ -135,8 +136,6 @@ function Header({
   );
 }
 
-// ---------------------- Footer --------------------------------------------
-
 function Footer({
   site,
   theme,
@@ -147,7 +146,7 @@ function Footer({
   accent: string;
 }) {
   return (
-    <footer style={{ borderTop: `1px solid ${theme.border}`, marginTop: 48 }}>
+    <footer style={{ borderTop: `1px solid ${theme.border}`, marginTop: 48, backgroundColor: theme.bg }}>
       <div
         style={{
           maxWidth: 980,
@@ -177,9 +176,13 @@ function Footer({
   );
 }
 
-// ---------------------- Block renderer ------------------------------------
+// ---------------------- Helpers -------------------------------------------
 
-function buttonStyle(theme: SiteTheme, accent: string, variant: "primary" | "ghost" = "primary") {
+function buttonStyle(
+  theme: SiteTheme,
+  accent: string,
+  variant: "primary" | "ghost" | "onImage" = "primary"
+) {
   const radius =
     theme.buttonStyle === "pill"
       ? 9999
@@ -188,23 +191,49 @@ function buttonStyle(theme: SiteTheme, accent: string, variant: "primary" | "gho
       : 8;
   const base = {
     display: "inline-block",
-    padding: "10px 18px",
-    fontSize: 14,
-    fontWeight: 500,
+    padding: "12px 22px",
+    fontSize: 15,
+    fontWeight: 600,
     textDecoration: "none",
     borderRadius: radius,
     transition: "opacity 0.15s",
   } as const;
-  if (variant === "primary") {
+  if (variant === "primary")
     return { ...base, backgroundColor: accent, color: theme.primaryText };
-  }
+  if (variant === "onImage")
+    return {
+      ...base,
+      backgroundColor: "#FFFFFF",
+      color: "#0B1220",
+      boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
+    };
   return {
     ...base,
     backgroundColor: "transparent",
     color: accent,
-    border: `1px solid ${accent}`,
+    border: `1.5px solid ${accent}`,
   };
 }
+
+function sectionWrap(
+  bgColor: string | undefined,
+  fullBleed: boolean,
+  children: React.ReactNode,
+  pad: string = "64px 16px"
+) {
+  if (bgColor || fullBleed) {
+    return (
+      <section style={{ backgroundColor: bgColor }}>
+        <div style={{ maxWidth: 980, margin: "0 auto", padding: pad }}>{children}</div>
+      </section>
+    );
+  }
+  return (
+    <section style={{ maxWidth: 980, margin: "0 auto", padding: pad }}>{children}</section>
+  );
+}
+
+// ---------------------- Block renderer ------------------------------------
 
 function BlockRenderer({
   block,
@@ -215,15 +244,216 @@ function BlockRenderer({
   theme: SiteTheme;
   accent: string;
 }) {
-  if (block.type === "hero") {
+  if (block.type === "hero") return <HeroBlock block={block} theme={theme} accent={accent} />;
+  if (block.type === "rich_text") {
+    return sectionWrap(undefined, false, <ChatMarkdown>{block.props.markdown}</ChatMarkdown>, "32px 16px");
+  }
+  if (block.type === "features") return <FeaturesBlock block={block} theme={theme} accent={accent} />;
+  if (block.type === "cta") return <CtaBlock block={block} theme={theme} accent={accent} />;
+  if (block.type === "gallery") return <GalleryBlock block={block} theme={theme} />;
+  if (block.type === "testimonials") return <TestimonialsBlock block={block} theme={theme} />;
+  return null;
+}
+
+// ---------------------- Hero ----------------------------------------------
+
+function HeroBlock({
+  block,
+  theme,
+  accent,
+}: {
+  block: Extract<Block, { type: "hero" }>;
+  theme: SiteTheme;
+  accent: string;
+}) {
+  const p = block.props;
+  const layout = p.layout ?? theme.heroLayout ?? "centered";
+
+  // ----- Full-bleed image background -----
+  if (layout === "imageBg" && p.imageUrl) {
+    const overlay = (p.overlayDarkness ?? 35) / 100;
     return (
       <section
         style={{
-          textAlign: theme.heroLayout === "centered" ? "center" : "left",
-          padding: "48px 0 32px",
+          position: "relative",
+          backgroundImage: `url(${p.imageUrl})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          color: "#FFFFFF",
         }}
       >
-        {block.props.eyebrow && (
+        <div
+          style={{
+            backgroundColor: `rgba(0,0,0,${overlay})`,
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 980,
+              margin: "0 auto",
+              padding: "120px 16px",
+              textAlign: "center",
+            }}
+          >
+            {p.eyebrow && (
+              <p
+                style={{
+                  textTransform: "uppercase",
+                  letterSpacing: 2,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  marginBottom: 12,
+                  opacity: 0.9,
+                }}
+              >
+                {p.eyebrow}
+              </p>
+            )}
+            <h1
+              style={{
+                fontFamily: `${theme.headingFont}, serif`,
+                fontSize: "clamp(36px, 6vw, 64px)",
+                fontWeight: 700,
+                lineHeight: 1.05,
+                margin: "0 0 18px",
+              }}
+            >
+              {p.headline}
+            </h1>
+            {p.subhead && (
+              <p
+                style={{
+                  fontSize: 19,
+                  maxWidth: 680,
+                  margin: "0 auto 28px",
+                  opacity: 0.92,
+                }}
+              >
+                {p.subhead}
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              {p.ctaPrimaryText && (
+                <a href={p.ctaPrimaryHref ?? "#"} style={buttonStyle(theme, accent, "onImage")}>
+                  {p.ctaPrimaryText}
+                </a>
+              )}
+              {p.ctaSecondaryText && (
+                <a
+                  href={p.ctaSecondaryHref ?? "#"}
+                  style={{
+                    ...buttonStyle(theme, accent, "ghost"),
+                    color: "#FFFFFF",
+                    borderColor: "rgba(255,255,255,0.6)",
+                  }}
+                >
+                  {p.ctaSecondaryText}
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // ----- Split: text left, image right -----
+  if (layout === "splitRight") {
+    return (
+      <section style={{ backgroundColor: p.bgColor }}>
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: "0 auto",
+            padding: "72px 16px",
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 48,
+            alignItems: "center",
+          }}
+        >
+          <div>
+            {p.eyebrow && (
+              <p
+                style={{
+                  color: accent,
+                  textTransform: "uppercase",
+                  letterSpacing: 1.5,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  marginBottom: 12,
+                }}
+              >
+                {p.eyebrow}
+              </p>
+            )}
+            <h1
+              style={{
+                fontFamily: `${theme.headingFont}, serif`,
+                fontSize: "clamp(32px, 4.5vw, 52px)",
+                fontWeight: 700,
+                lineHeight: 1.08,
+                margin: "0 0 16px",
+              }}
+            >
+              {p.headline}
+            </h1>
+            {p.subhead && (
+              <p style={{ color: theme.muted, fontSize: 18, marginBottom: 24 }}>{p.subhead}</p>
+            )}
+            <div style={{ display: "flex", gap: 12 }}>
+              {p.ctaPrimaryText && (
+                <a href={p.ctaPrimaryHref ?? "#"} style={buttonStyle(theme, accent, "primary")}>
+                  {p.ctaPrimaryText}
+                </a>
+              )}
+              {p.ctaSecondaryText && (
+                <a href={p.ctaSecondaryHref ?? "#"} style={buttonStyle(theme, accent, "ghost")}>
+                  {p.ctaSecondaryText}
+                </a>
+              )}
+            </div>
+          </div>
+          {p.imageUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={p.imageUrl}
+              alt=""
+              style={{
+                width: "100%",
+                borderRadius: 16,
+                aspectRatio: "4 / 3",
+                objectFit: "cover",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                width: "100%",
+                aspectRatio: "4 / 3",
+                borderRadius: 16,
+                backgroundColor: `${accent}15`,
+                border: `1px dashed ${accent}40`,
+              }}
+            />
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  // ----- Centered (default) -----
+  return (
+    <section style={{ backgroundColor: p.bgColor }}>
+      <div
+        style={{
+          maxWidth: 880,
+          margin: "0 auto",
+          padding: "80px 16px 64px",
+          textAlign: "center",
+        }}
+      >
+        {p.eyebrow && (
           <p
             style={{
               color: accent,
@@ -231,144 +461,338 @@ function BlockRenderer({
               letterSpacing: 1.5,
               fontSize: 12,
               fontWeight: 600,
-              marginBottom: 8,
+              marginBottom: 12,
             }}
           >
-            {block.props.eyebrow}
+            {p.eyebrow}
           </p>
         )}
         <h1
           style={{
             fontFamily: `${theme.headingFont}, serif`,
-            fontSize: "clamp(28px, 5vw, 48px)",
+            fontSize: "clamp(34px, 5vw, 56px)",
             fontWeight: 700,
-            lineHeight: 1.1,
-            margin: "0 0 12px",
+            lineHeight: 1.05,
+            margin: "0 0 16px",
           }}
         >
-          {block.props.headline}
+          {p.headline}
         </h1>
-        {block.props.subhead && (
+        {p.subhead && (
           <p
             style={{
               color: theme.muted,
-              fontSize: 18,
-              maxWidth: 620,
-              margin: theme.heroLayout === "centered" ? "0 auto 18px" : "0 0 18px",
+              fontSize: 19,
+              maxWidth: 640,
+              margin: "0 auto 28px",
             }}
           >
-            {block.props.subhead}
+            {p.subhead}
           </p>
         )}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            justifyContent: theme.heroLayout === "centered" ? "center" : "flex-start",
-          }}
-        >
-          {block.props.ctaPrimaryText && (
-            <a href={block.props.ctaPrimaryHref ?? "#"} style={buttonStyle(theme, accent, "primary")}>
-              {block.props.ctaPrimaryText}
+        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+          {p.ctaPrimaryText && (
+            <a href={p.ctaPrimaryHref ?? "#"} style={buttonStyle(theme, accent, "primary")}>
+              {p.ctaPrimaryText}
             </a>
           )}
-          {block.props.ctaSecondaryText && (
-            <a href={block.props.ctaSecondaryHref ?? "#"} style={buttonStyle(theme, accent, "ghost")}>
-              {block.props.ctaSecondaryText}
+          {p.ctaSecondaryText && (
+            <a href={p.ctaSecondaryHref ?? "#"} style={buttonStyle(theme, accent, "ghost")}>
+              {p.ctaSecondaryText}
             </a>
           )}
         </div>
-        {block.props.imageUrl && (
+        {p.imageUrl && (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
-            src={block.props.imageUrl}
+            src={p.imageUrl}
             alt=""
             style={{
-              marginTop: 32,
+              marginTop: 40,
               maxWidth: "100%",
               borderRadius: 12,
-              display: theme.heroLayout === "centered" ? "block" : "block",
-              marginLeft: theme.heroLayout === "centered" ? "auto" : 0,
-              marginRight: theme.heroLayout === "centered" ? "auto" : 0,
+              display: "block",
+              marginLeft: "auto",
+              marginRight: "auto",
             }}
           />
         )}
-      </section>
-    );
-  }
+      </div>
+    </section>
+  );
+}
 
-  if (block.type === "rich_text") {
-    return (
-      <section style={{ padding: "24px 0" }}>
-        <ChatMarkdown>{block.props.markdown}</ChatMarkdown>
-      </section>
-    );
-  }
+// ---------------------- Features ------------------------------------------
 
-  if (block.type === "features") {
-    return (
-      <section style={{ padding: "32px 0", textAlign: "center" }}>
-        {block.props.title && (
-          <h2
-            style={{
-              fontFamily: `${theme.headingFont}, serif`,
-              fontSize: 28,
-              fontWeight: 700,
-              margin: "0 0 8px",
-            }}
-          >
-            {block.props.title}
-          </h2>
-        )}
-        {block.props.intro && (
-          <p style={{ color: theme.muted, marginBottom: 24 }}>{block.props.intro}</p>
-        )}
+function FeaturesBlock({
+  block,
+  theme,
+  accent,
+}: {
+  block: Extract<Block, { type: "features" }>;
+  theme: SiteTheme;
+  accent: string;
+}) {
+  const p = block.props;
+  const layout = p.layout ?? "cards";
+
+  const header = (
+    <>
+      {p.title && (
+        <h2
+          style={{
+            fontFamily: `${theme.headingFont}, serif`,
+            fontSize: 32,
+            fontWeight: 700,
+            margin: "0 0 8px",
+            textAlign: "center",
+          }}
+        >
+          {p.title}
+        </h2>
+      )}
+      {p.intro && (
+        <p
+          style={{
+            color: theme.muted,
+            textAlign: "center",
+            marginBottom: 32,
+            maxWidth: 620,
+            marginLeft: "auto",
+            marginRight: "auto",
+          }}
+        >
+          {p.intro}
+        </p>
+      )}
+    </>
+  );
+
+  const grid = (() => {
+    if (layout === "compact") {
+      return (
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 16,
+            gap: 32,
             textAlign: "left",
           }}
         >
-          {block.props.items.map((it, i) => (
-            <div
-              key={i}
-              style={{
-                border: `1px solid ${theme.border}`,
-                borderRadius: 12,
-                padding: 18,
-              }}
-            >
+          {p.items.map((it, i) => (
+            <div key={i}>
               <h3
                 style={{
                   fontFamily: `${theme.headingFont}, serif`,
-                  fontSize: 16,
+                  fontSize: 18,
                   fontWeight: 700,
                   color: accent,
-                  margin: "0 0 6px",
+                  margin: "0 0 8px",
                 }}
               >
                 {it.title}
               </h3>
-              <p style={{ color: theme.muted, fontSize: 14, margin: 0 }}>{it.description}</p>
+              <p style={{ color: theme.muted, fontSize: 14, margin: 0, lineHeight: 1.6 }}>
+                {it.description}
+              </p>
             </div>
           ))}
+        </div>
+      );
+    }
+
+    if (layout === "iconList") {
+      return (
+        <div style={{ maxWidth: 720, margin: "0 auto", display: "grid", gap: 18 }}>
+          {p.items.map((it, i) => (
+            <div key={i} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 999,
+                  backgroundColor: `${accent}15`,
+                  color: accent,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                {i + 1}
+              </div>
+              <div>
+                <h3
+                  style={{
+                    fontFamily: `${theme.headingFont}, serif`,
+                    fontSize: 17,
+                    fontWeight: 700,
+                    margin: "0 0 4px",
+                  }}
+                >
+                  {it.title}
+                </h3>
+                <p style={{ color: theme.muted, fontSize: 14, margin: 0, lineHeight: 1.6 }}>
+                  {it.description}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // cards (default)
+    return (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: 16,
+          textAlign: "left",
+        }}
+      >
+        {p.items.map((it, i) => (
+          <div
+            key={i}
+            style={{
+              border: `1px solid ${theme.border}`,
+              borderRadius: 14,
+              padding: 22,
+              backgroundColor: theme.bg,
+            }}
+          >
+            <h3
+              style={{
+                fontFamily: `${theme.headingFont}, serif`,
+                fontSize: 18,
+                fontWeight: 700,
+                color: accent,
+                margin: "0 0 8px",
+              }}
+            >
+              {it.title}
+            </h3>
+            <p style={{ color: theme.muted, fontSize: 14, margin: 0, lineHeight: 1.55 }}>
+              {it.description}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+  })();
+
+  return sectionWrap(p.bgColor, false, <>{header}{grid}</>, "64px 16px");
+}
+
+// ---------------------- CTA -----------------------------------------------
+
+function CtaBlock({
+  block,
+  theme,
+  accent,
+}: {
+  block: Extract<Block, { type: "cta" }>;
+  theme: SiteTheme;
+  accent: string;
+}) {
+  const p = block.props;
+  const variant = p.variant ?? "soft";
+
+  if (variant === "imageBg" && p.bgImageUrl) {
+    return (
+      <section
+        style={{
+          backgroundImage: `url(${p.bgImageUrl})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          color: "#FFFFFF",
+        }}
+      >
+        <div style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+          <div
+            style={{
+              maxWidth: 880,
+              margin: "0 auto",
+              padding: "88px 16px",
+              textAlign: "center",
+            }}
+          >
+            <h2
+              style={{
+                fontFamily: `${theme.headingFont}, serif`,
+                fontSize: 34,
+                fontWeight: 700,
+                margin: "0 0 12px",
+              }}
+            >
+              {p.headline}
+            </h2>
+            {p.body && <p style={{ marginBottom: 24, opacity: 0.9 }}>{p.body}</p>}
+            <a href={p.ctaHref} style={buttonStyle(theme, accent, "onImage")}>
+              {p.ctaText}
+            </a>
+          </div>
         </div>
       </section>
     );
   }
 
-  if (block.type === "cta") {
+  if (variant === "bold") {
     return (
-      <section
+      <section style={{ backgroundColor: accent, color: theme.primaryText }}>
+        <div
+          style={{
+            maxWidth: 880,
+            margin: "0 auto",
+            padding: "72px 16px",
+            textAlign: "center",
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: `${theme.headingFont}, serif`,
+              fontSize: 32,
+              fontWeight: 700,
+              margin: "0 0 12px",
+            }}
+          >
+            {p.headline}
+          </h2>
+          {p.body && <p style={{ marginBottom: 24, opacity: 0.9 }}>{p.body}</p>}
+          <a
+            href={p.ctaHref}
+            style={{
+              ...buttonStyle(theme, accent, "primary"),
+              backgroundColor: "#FFFFFF",
+              color: accent,
+            }}
+          >
+            {p.ctaText}
+          </a>
+        </div>
+      </section>
+    );
+  }
+
+  // soft (default)
+  return (
+    <section
+      style={{
+        maxWidth: 980,
+        margin: "32px auto",
+        padding: "0 16px",
+      }}
+    >
+      <div
         style={{
-          padding: "40px 24px",
+          padding: "48px 24px",
           textAlign: "center",
           backgroundColor: `${accent}10`,
           border: `1px solid ${theme.border}`,
           borderRadius: 16,
-          margin: "32px 0",
         }}
       >
         <h2
@@ -379,107 +803,126 @@ function BlockRenderer({
             margin: "0 0 12px",
           }}
         >
-          {block.props.headline}
+          {p.headline}
         </h2>
-        {block.props.body && (
-          <p style={{ color: theme.muted, marginBottom: 18 }}>{block.props.body}</p>
-        )}
-        <a href={block.props.ctaHref} style={buttonStyle(theme, accent, "primary")}>
-          {block.props.ctaText}
+        {p.body && <p style={{ color: theme.muted, marginBottom: 18 }}>{p.body}</p>}
+        <a href={p.ctaHref} style={buttonStyle(theme, accent, "primary")}>
+          {p.ctaText}
         </a>
-      </section>
-    );
-  }
+      </div>
+    </section>
+  );
+}
 
-  if (block.type === "gallery") {
-    return (
-      <section style={{ padding: "32px 0" }}>
-        {block.props.title && (
-          <h2
-            style={{
-              fontFamily: `${theme.headingFont}, serif`,
-              fontSize: 28,
-              fontWeight: 700,
-              margin: "0 0 16px",
-            }}
-          >
-            {block.props.title}
-          </h2>
-        )}
-        <div
+// ---------------------- Gallery + Testimonials ----------------------------
+
+function GalleryBlock({
+  block,
+  theme,
+}: {
+  block: Extract<Block, { type: "gallery" }>;
+  theme: SiteTheme;
+}) {
+  const p = block.props;
+  return sectionWrap(
+    undefined,
+    false,
+    <>
+      {p.title && (
+        <h2
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 10,
+            fontFamily: `${theme.headingFont}, serif`,
+            fontSize: 28,
+            fontWeight: 700,
+            margin: "0 0 20px",
           }}
         >
-          {block.props.images.map((img, i) => (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              key={i}
-              src={img.url}
-              alt={img.alt ?? ""}
-              style={{
-                width: "100%",
-                aspectRatio: "1 / 1",
-                objectFit: "cover",
-                borderRadius: 10,
-              }}
-            />
-          ))}
-        </div>
-      </section>
-    );
-  }
-
-  if (block.type === "testimonials") {
-    return (
-      <section style={{ padding: "32px 0" }}>
-        {block.props.title && (
-          <h2
+          {p.title}
+        </h2>
+      )}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 10,
+        }}
+      >
+        {p.images.map((img, i) => (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            key={i}
+            src={img.url}
+            alt={img.alt ?? ""}
             style={{
-              fontFamily: `${theme.headingFont}, serif`,
-              fontSize: 28,
-              fontWeight: 700,
-              margin: "0 0 16px",
-              textAlign: "center",
+              width: "100%",
+              aspectRatio: "1 / 1",
+              objectFit: "cover",
+              borderRadius: 10,
             }}
-          >
-            {block.props.title}
-          </h2>
-        )}
-        <div
+          />
+        ))}
+      </div>
+    </>,
+    "48px 16px"
+  );
+}
+
+function TestimonialsBlock({
+  block,
+  theme,
+}: {
+  block: Extract<Block, { type: "testimonials" }>;
+  theme: SiteTheme;
+}) {
+  const p = block.props;
+  return sectionWrap(
+    undefined,
+    false,
+    <>
+      {p.title && (
+        <h2
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 16,
+            fontFamily: `${theme.headingFont}, serif`,
+            fontSize: 28,
+            fontWeight: 700,
+            margin: "0 0 24px",
+            textAlign: "center",
           }}
         >
-          {block.props.items.map((t, i) => (
-            <blockquote
-              key={i}
-              style={{
-                border: `1px solid ${theme.border}`,
-                borderRadius: 12,
-                padding: 18,
-                fontStyle: "italic",
-                color: theme.text,
-                margin: 0,
-              }}
-            >
-              <p style={{ margin: "0 0 12px", fontSize: 14, lineHeight: 1.6 }}>
-                &ldquo;{t.quote}&rdquo;
-              </p>
-              <footer style={{ fontStyle: "normal", fontSize: 12, color: theme.muted }}>
-                {t.author}
-                {t.role && <span> · {t.role}</span>}
-              </footer>
-            </blockquote>
-          ))}
-        </div>
-      </section>
-    );
-  }
-
-  return null;
+          {p.title}
+        </h2>
+      )}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: 16,
+        }}
+      >
+        {p.items.map((t, i) => (
+          <blockquote
+            key={i}
+            style={{
+              border: `1px solid ${theme.border}`,
+              borderRadius: 12,
+              padding: 22,
+              fontStyle: "italic",
+              color: theme.text,
+              margin: 0,
+              backgroundColor: theme.bg,
+            }}
+          >
+            <p style={{ margin: "0 0 14px", fontSize: 15, lineHeight: 1.6 }}>
+              &ldquo;{t.quote}&rdquo;
+            </p>
+            <footer style={{ fontStyle: "normal", fontSize: 13, color: theme.muted }}>
+              {t.author}
+              {t.role && <span> · {t.role}</span>}
+            </footer>
+          </blockquote>
+        ))}
+      </div>
+    </>,
+    "48px 16px"
+  );
 }

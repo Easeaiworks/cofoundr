@@ -32,6 +32,13 @@ export const HeroPropsSchema = z.object({
   ctaSecondaryText: z.string().max(40).optional(),
   ctaSecondaryHref: z.string().max(500).optional(),
   imageUrl: z.string().max(800).optional(),
+  // Visual variants
+  layout: z.enum(["centered", "splitRight", "imageBg"]).default("centered"),
+  bgColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+  overlayDarkness: z.number().min(0).max(100).default(35).optional(),
 });
 
 export const RichTextPropsSchema = z.object({
@@ -49,6 +56,12 @@ export const FeaturesPropsSchema = z.object({
       })
     )
     .max(8),
+  // Visual variants
+  layout: z.enum(["cards", "compact", "iconList"]).default("cards"),
+  bgColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
 });
 
 export const CtaPropsSchema = z.object({
@@ -56,6 +69,9 @@ export const CtaPropsSchema = z.object({
   body: z.string().max(400).optional(),
   ctaText: z.string().max(40),
   ctaHref: z.string().max(500),
+  // Visual variants
+  variant: z.enum(["soft", "bold", "imageBg"]).default("soft"),
+  bgImageUrl: z.string().max(800).optional(),
 });
 
 export const GalleryPropsSchema = z.object({

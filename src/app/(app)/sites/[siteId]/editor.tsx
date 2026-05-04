@@ -20,6 +20,7 @@ import {
   defaultBlock,
 } from "@/lib/site-blocks";
 import { SITE_THEMES, type SiteTheme } from "@/lib/site-themes";
+import { resizeImage } from "@/lib/image-resize";
 import {
   updateSitePageBlocksAction,
   updateSiteSettingsAction,
@@ -430,7 +431,12 @@ function BlockCard({
           <FeaturesEditor props={block.props} onChange={(p) => onChangeProps(p)} />
         )}
         {block.type === "cta" && (
-          <CtaEditor props={block.props} onChange={(p) => onChangeProps(p)} />
+          <CtaEditor
+            props={block.props}
+            onChange={(p) => onChangeProps(p)}
+            workspaceId={workspaceId}
+            siteId={siteId}
+          />
         )}
         {block.type === "gallery" && (
           <GalleryEditor
@@ -465,6 +471,20 @@ function HeroEditor({
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="md:col-span-2">
+        <FieldLabel>Layout</FieldLabel>
+        <VariantPicker
+          value={props.layout ?? "centered"}
+          options={[
+            { value: "centered", label: "Centered" },
+            { value: "splitRight", label: "Image right" },
+            { value: "imageBg", label: "Full background" },
+          ]}
+          onChange={(v) =>
+            onChange({ ...props, layout: v as "centered" | "splitRight" | "imageBg" })
+          }
+        />
+      </div>
       <div>
         <FieldLabel>Eyebrow</FieldLabel>
         <Input
@@ -507,6 +527,29 @@ function HeroEditor({
           workspaceId={workspaceId}
           siteId={siteId}
         />
+        {props.layout === "imageBg" && props.imageUrl && (
+          <div className="mt-3">
+            <FieldLabel>Overlay darkness ({props.overlayDarkness ?? 35}%)</FieldLabel>
+            <input
+              type="range"
+              min={0}
+              max={80}
+              step={5}
+              value={props.overlayDarkness ?? 35}
+              onChange={(e) =>
+                onChange({ ...props, overlayDarkness: Number(e.target.value) })
+              }
+              className="w-full"
+            />
+          </div>
+        )}
+      </div>
+      <div>
+        <FieldLabel>Section background color (optional)</FieldLabel>
+        <ColorPicker
+          value={props.bgColor ?? ""}
+          onChange={(v) => onChange({ ...props, bgColor: v || undefined })}
+        />
       </div>
     </div>
   );
@@ -542,6 +585,27 @@ function FeaturesEditor({
 }) {
   return (
     <div className="space-y-3">
+      <div>
+        <FieldLabel>Layout</FieldLabel>
+        <VariantPicker
+          value={props.layout ?? "cards"}
+          options={[
+            { value: "cards", label: "Cards" },
+            { value: "compact", label: "Compact" },
+            { value: "iconList", label: "Icon list" },
+          ]}
+          onChange={(v) =>
+            onChange({ ...props, layout: v as "cards" | "compact" | "iconList" })
+          }
+        />
+      </div>
+      <div>
+        <FieldLabel>Section background color (optional)</FieldLabel>
+        <ColorPicker
+          value={props.bgColor ?? ""}
+          onChange={(v) => onChange({ ...props, bgColor: v || undefined })}
+        />
+      </div>
       <div>
         <FieldLabel>Title</FieldLabel>
         <Input
@@ -591,12 +655,30 @@ function FeaturesEditor({
 function CtaEditor({
   props,
   onChange,
+  workspaceId,
+  siteId,
 }: {
   props: Extract<Block, { type: "cta" }>["props"];
   onChange: (p: Extract<Block, { type: "cta" }>["props"]) => void;
+  workspaceId: string;
+  siteId: string;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="md:col-span-2">
+        <FieldLabel>Style</FieldLabel>
+        <VariantPicker
+          value={props.variant ?? "soft"}
+          options={[
+            { value: "soft", label: "Soft (light tint)" },
+            { value: "bold", label: "Bold (full accent)" },
+            { value: "imageBg", label: "Image background" },
+          ]}
+          onChange={(v) =>
+            onChange({ ...props, variant: v as "soft" | "bold" | "imageBg" })
+          }
+        />
+      </div>
       <div className="md:col-span-2">
         <FieldLabel>Headline</FieldLabel>
         <Input
@@ -632,6 +714,83 @@ function CtaEditor({
           placeholder="mailto:hello@ or https://..."
         />
       </div>
+      {props.variant === "imageBg" && (
+        <div className="md:col-span-2">
+          <FieldLabel>Background image</FieldLabel>
+          <ImageUploader
+            currentUrl={props.bgImageUrl}
+            onUploaded={(url) => onChange({ ...props, bgImageUrl: url })}
+            workspaceId={workspaceId}
+            siteId={siteId}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Reusable bits ---------------------------------------------------------
+
+function VariantPicker({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={
+            "rounded-md border px-3 py-2 text-xs " +
+            (value === o.value
+              ? "border-accent bg-accent-50 text-accent font-medium"
+              : "border-accent-100 text-ink hover:bg-accent-50")
+          }
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ColorPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="color"
+        value={value || "#FFFFFF"}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-12 rounded-md border border-accent-100"
+      />
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="#FFFFFF"
+        className="max-w-[160px]"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="text-xs text-ink-muted hover:text-ink"
+        >
+          Clear
+        </button>
+      )}
     </div>
   );
 }
@@ -765,17 +924,38 @@ function ImageUploader({
   const [error, setError] = useState<string | null>(null);
 
   async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const rawFile = e.target.files?.[0];
+    if (!rawFile) return;
     setUploading(true);
     setError(null);
     try {
+      // Resize on the client to dodge Vercel's 4.5 MB body limit and speed
+      // up uploads. Photos straight off a phone are commonly 5–12 MB.
+      let file = rawFile;
+      try {
+        file = await resizeImage(rawFile, { maxDim: 1920, quality: 0.85 });
+      } catch {
+        // If resize fails (older browsers, weird mime), fall back to original.
+      }
+
       const fd = new FormData();
       fd.set("file", file);
       const res = await fetch(
         `/api/sites/upload-image?workspace_id=${workspaceId}&site_id=${siteId}`,
         { method: "POST", body: fd }
       );
+
+      // Some Vercel edge errors return non-JSON (HTML/text). Detect and
+      // surface a useful message instead of "Unexpected token R".
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        const text = await res.text().catch(() => "");
+        if (res.status === 413 || /entity too large/i.test(text)) {
+          throw new Error("Image is too large after resize. Try a smaller photo.");
+        }
+        throw new Error(`Upload failed (HTTP ${res.status})`);
+      }
+
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`);
       onUploaded(j.url);
